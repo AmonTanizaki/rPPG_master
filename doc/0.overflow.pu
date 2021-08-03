@@ -1,10 +1,17 @@
 @startuml
-
 (*) --> "Record Video"
---> "RoI_Segmentation"
---> "RGB component"
---> "Interpolate FPS(sampling)"
---> "rPPG detection"
---> "rPPG signals"
+partition RoI_Segmentation {
+--> "RoI segmentation"
+--> "Averaged RGB Signals"
+}
+partition rPPG_detection {
+--> "Interpolate FPS of RGB signals"
+--> "rPPG algorithm"
+}
+partition HRV_Estimation {
+--> "R peaks detection"
+--> "Remove outliers of RRI"
+--> "Calc PSD by using Fourier Transform"
+}
 --> (*)
 @enduml

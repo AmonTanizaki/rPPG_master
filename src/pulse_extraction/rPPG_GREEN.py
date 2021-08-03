@@ -5,24 +5,32 @@ Verkruysse, W., Svaasand, L. O., & Nelson, J. S. (2008). Remote plethysmographic
 # coding: utf-8
 import numpy as np
 import pandas as pd
-from .. import preprocessing
+from ..calc_hrv import preprocessing
 
-
-def GreenMethod(rgb_signals, LPF=0.7, HPF=2.5, fs=None):
-    # Green Channel
-    rppg = rgb_signals[:, 1]
-    # Moving Average
-    smooth_rppg = preprocessing.MovingAve(rppg, num=30)
-    # Filter, Normalize
-    filtered_rppg = preprocessing.ButterFilter(rppg, LPF, HPF, fs)
-    return filtered_rppg
-
-if __name__ == "__main__":
-    print('__package__: {}, __name__: {}'.format(
-    __package__, __name__))
-    import matplotlib.pyplot as plt
-    bgr_component = pd.read_csv(r"C:\Users\akito\Desktop\testets.csv",usecols=[3,4,5],header=0,index_col=0)
+def GreenMethod(rgb_signals,fs,filter=True,LPF=0.7, HPF=2.5):
+    """
+    RPPG　Green法
     
-    plt.plot(GreenMethod(bgr_component))
+    Parameters
+    -------
+    rgb_signals :array
+       一連のRGB信号
+    fs : int 
+       フレームレート
+    filter: bool,optional
+        バンドパスフィルタによってノイズを除去するか選択
+    LPF,HPF : float
+        バンドパスの周波数帯を定義する
 
-    plt.show()
+    Returns
+    -------
+    rppg: array
+        RGB信号から抽出したG成分
+    """
+    green_sig = rgb_signals[:, 1]
+    if filter:
+        # Filter, Normalize
+        rppg = preprocessing.ButterFilter(green_sig, LPF, HPF, fs)
+    else:
+        rppg = green_sig
+    return rppg

@@ -6,52 +6,121 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy import signal,interpolate
-import pyhrv
 from . import visualize
+from ..calc_hrv import preprocessing
+from scipy.sparse import spdiags
 
+def CalcFreqTimeHRV(rpeaks,rri=None, tw=120,overlap=30,fps=30):
+    """Plot spectrogram
 
-
-
-def CalcHRV_Time(rpeaks,rri, duration=120,overlap=60,skip_time=None,outpath=None): 
-    '''
-    一定時間ごとの特徴量を算出し，dataframe型にまとめて返す
-    rri [ms]
+    Parameters
+    ----------
     rpeaks [ms]
+    rri [ms]
+    """
+    rpeaks = rpeaks*0.001
+    # 信号を補間する
+    sample_rate = 4 # 補間するサンプリングレート
+    # 3次のスプライン補間
+    rri_spline = interpolate.interp1d(rpeaks, rri, 'cubic')
+    t_interpol = np.arange(rpeaks[0], rpeaks[-1], 1./sample_rate)
+    rri_interpol = rri_spline(t_interpol)
 
-    '''
+    # トレンドを除去
+    filtered_rri_interpol = detrend(rri_interpol,Lambda=500)
     
-    # 時間変数を作成
-    time_ = np.arange(duration, rpeaks[-1]/1000, overlap)
-    label_ = time_
-    if skip_time is not None:
-        time_ = time_ + skip_time
-    section_ = zip((time_ - duration), time_)
-    emotion = dict(zip(label_.tolist(), section_))
-
-    df = pd.DataFrame([])
-    # 各生体データを時間区間りで算出
-    for i,key in enumerate(emotion.keys()):
-        # セグメント内での特徴量算出
+    # 短時間フーリエ解析
+    nfft= int(tw*sample_rate)
+    f, t, Sxx = signal.spectrogram(filtered_rri_interpol, fs=sample_rate, nperseg=nfft,window='hamming',
+                                   noverlap=int(nfft-overlap*sample_rate), scaling="density")
+    df = None
+    for i,t in enumerate(t):
         segment_bio_report = {}
-        # 心拍をセクションごとに分割する
-        seg_rpeaks  = rpeaks[(rpeaks>=emotion[key][0]*1000) & (rpeaks<=emotion[key][1]*1000)]
-        # 特徴抽出
-        # bio_parameter = Calc_PSD(seg_rpeaks)
-        features = pyhrv.frequency_domain.welch_psd(nni=rri[(rpeaks>=emotion[key][0]*1000) & (rpeaks<=emotion[key][1]*1000)],
-        show=False,detrend=False,nfft=2**9)
+        # 生体指標を算出
+        parameter =  CalcParameter(f, Sxx[:,i])
+        segment_bio_report.update({'Time':t})
+        segment_bio_report.update(parameter)
 
-        # Print all the parameters keys and values individually
-        bio_parameter = {"LF_ABS":features["fft_abs"][0],"HF_ABS":features["fft_abs"][1], "LFHFratio": features["fft_ratio"]}
-        
-        print("{}... done".format(key))
-        segment_bio_report.update({'section':key})
-        segment_bio_report.update(bio_parameter)
-        if i == 0:
+        if df is None:
             df = pd.DataFrame([], columns=segment_bio_report.keys())
-        df =  pd.concat([df, pd.DataFrame(segment_bio_report , index=[key])])
-        plt.gca().clear()
+        df =  pd.concat([df, pd.DataFrame(segment_bio_report , index=[t])])
+
     return df
 
+def CalcParameter(f, power):
+    """
+    HRVの生体指標を算出
+
+    Keys:'vlf'	Very low frequency		(default: (0.003Hz, 0.04Hz))
+         'lf'	Low frequency			(default: (0.04Hz - 0.15Hz))
+         'hf'	High frequency			(default: (0.15Hz - 0.4Hz))
+    """
+    # 周波数帯を設定
+    vlf_f = [0.,0.04]
+    lf_f = [0.04,0.15]
+    hf_f = [0.15,0.4]
+
+    # インデックスを取得
+    vlf_i = np.where((f > vlf_f[0]) & (f <= vlf_f[1]),True,False)
+    lf_i = np.where((f > lf_f[0]) & (f <= lf_f[1]),True,False)
+    hf_i = np.where((f > hf_f[0]) & (f <= hf_f[1]),True,False)
+    total_i = np.where(f <= hf_f[1],True,False)
+    
+    # パワースペクトルを算出
+    df = (f[1] - f[0])
+    vlf_power = np.sum(power[vlf_i]) * df
+    lf_power = np.sum(power[lf_i]) * df
+    hf_power = np.sum(power[hf_i]) * df
+    abs_powers = (vlf_power, lf_power, hf_power) 
+    total_power = np.sum(abs_powers)
+
+    # Normalized powers
+    norms = tuple([100 * x / (lf_power + hf_power) for x in [lf_power, hf_power]])
+    
+    # LF/HF Ratio
+    lfhf_ratio = lf_power/hf_power
+	# 返り値の作成
+    bio_parameters = {"LF_Norm":norms[0],
+                      "HF_Norm":norms[1],
+                      "LF_ABS":abs_powers[1],
+                      "HF_ABS":abs_powers[2],
+                      "LFHFratio": lfhf_ratio}
+    return bio_parameters
+
+# トレンド除去
+def detrend(rri, Lambda):
+    """applies a detrending filter.
+    
+    This code is based on the following article "An advanced detrending method with application
+    to HRV analysis". Tarvainen et al., IEEE Trans on Biomedical Engineering, 2002.
+    
+    Parameters
+    ----------
+    rri: numpy.ndarray
+        The rri where you want to remove the trend. 
+        ***  This rri needs resampling  ***
+    Lambda: int
+        The smoothing parameter.
+
+    Returns
+    ------- 
+    filtered_rri: numpy.ndarray
+        The detrended rri.
+    
+    """
+    rri_length = rri.shape[0]
+
+    # observation matrix
+    H = np.identity(rri_length)
+
+    # second-order difference matrix
+    ones = np.ones(rri_length)
+    minus_twos = -2*np.ones(rri_length)
+    diags_data = np.array([ones, minus_twos, ones])
+    diags_index = np.array([0, 1, 2])
+    D = spdiags(diags_data, diags_index, (rri_length-2), rri_length).toarray()
+    filtered_rri = np.dot((H - np.linalg.inv(H + (Lambda**2) * np.dot(D.T, D))), rri)
+    return filtered_rri 
 
 def CalcSNR(ppg, HR_F=None, fs=30, nfft=1024):
     """
@@ -62,68 +131,67 @@ def CalcSNR(ppg, HR_F=None, fs=30, nfft=1024):
     """
     freq, power = signal.welch(ppg, fs, nfft=nfft, detrend="constant",
                                      scaling="spectrum", window="hamming")
-    # peak hr
 
-    FMask2 = (freq >= 0.5)&(freq <= 4)
+    FMask = (freq >= 0.5)&(freq <= 4) # SNR算出範囲を指定
+    FMask2 = (freq >= 0.5)&(freq <= 1.5) # 心拍数特定範囲を指定
     
     if HR_F is None:
         power_sub = power[FMask2]
         HR_F = freq[FMask2][np.argmax(power_sub)]
-
-
     # 0.2Hz帯
     GTMask1 = (freq >= HR_F-0.1) & (freq <= HR_F+0.1)
     GTMask2 = (freq >= HR_F*2-0.2) & (freq <= HR_F*2+0.2)
     SPower = np.sum(power[GTMask1 | GTMask2])
     
-    AllPower = np.sum(power[FMask2])
+    AllPower = np.sum(power[FMask])
     SNR = 10*np.log10((SPower)**2/(AllPower-SPower)**2)
     return {"HR":HR_F,"SNR":SNR}
 
-def CalcFreqHR(ppg,fs,segment=10, overlap=None):
+def CalcTimeSNR(ppg,fs,tw=10):
     """
     Calculate Frequency domain heart rate
     using DFT,
     segment = 10s
     return HR[bpm]
     """
+
     # デフォルトは50%オーバーラップ
-    ts = np.arange(0,len(ppg)/fs,1/fs)
-    if overlap is None:
-        overlap = segment*1000/2 
+    nfft= int(fs*tw)
+    freq, t, Sxx = signal.spectrogram(ppg, fs=fs, scaling="spectrum",nperseg=nfft,noverlap=nfft//2)
+    FMask = (freq >= 0.5)&(freq <= 4) # SNR算出範囲を指定
+    FMask2 = (freq >= 0.5)&(freq <= 2) # 心拍数特定範囲を指定
 
-    starts = np.arange(0, ts[-1]-overlap, overlap)
-    HR_T = np.array([[]])
-    SNR_T = np.array([[]])
-    for start in starts:
-        end = start + segment
-        item_ppg = ppg[(ts >= start) & (ts < end)]
-        result = CalcSNR(item_ppg,fs=fs,nfft=256)
-        # visualize.plot_snr(item_ecg,fs=100)
-        # plt.show()
-        HR_T = np.append(HR_T, result["HR"])
-        SNR_T = np.append(SNR_T, result["SNR"])
-    return starts, HR_T, SNR_T
+    plt.pcolormesh(t, freq*60, Sxx,cmap="jet",shading='gouraud')
+    plt.ylabel('Frequency [BPM]')
+    plt.xlabel('Time [sec]')
+    plt.ylim(0, 250)
+    plt.show()
 
+    result = np.array([[],[]])
+    for Sxx_i in Sxx.T:
+        # Calculate HR
+        Sxx_sub = Sxx_i[FMask2]
+        HR_F = freq[FMask2][np.argmax(Sxx_sub)] # 心拍数を決定
+        # Calculate SN-Ratio
+        # 0.2Hz帯
+        GTMask1 = (freq >= HR_F-0.1) & (freq <= HR_F+0.1)
+        GTMask2 = (freq >= HR_F*2-0.2) & (freq <= HR_F*2+0.2)
+        SPower = np.sum(Sxx_i[GTMask1 | GTMask2])
+        AllPower = np.sum(Sxx_i[FMask])
+        SNR = 10*np.log10((SPower)**2/(AllPower-SPower)**2)
+        result = np.concatenate((result,np.array([[HR_F],[SNR]])),axis=1)
+        plt.plot(freq*60,Sxx_i)
+        plt.xlim(0, 250)
+        plt.axvspan(60*(HR_F-0.1), 60*(HR_F+0.1), color = "coral", alpha=0.2)
+        plt.axvspan(60*(2*HR_F-0.2), 60*(2*HR_F+0.2), color = "coral", alpha=0.2)
+        plt.title(SNR)
+        plt.show(block=False)
+        plt.pause(0.5)
+        plt.close()
 
-def CalcTimeHR(rpeaks, rri, segment=17.06, overlap=None):
-    """
-    Time domain Heart rate
-    rpeaks [ms]
-    rri [ms]
-    """
-    if overlap is None:
-        overlap = segment/2 
-    starts = np.arange(0, rpeaks[-1]-overlap, overlap)
-    HR_T = np.array([[]])
-    for start in starts:
-        end = start + segment
-        item_rri = rri[(rpeaks >= start) & (rpeaks < end)]
-        ave_hr = 60/np.average(item_rri)
-        HR_T = np.append(HR_T, ave_hr)
-    ts = starts + overlap
-    return ts, HR_T
+    result = np.concatenate((t.reshape(-1,1),result.T),axis=1)
 
+    return result
 
 def CalcEvalRRI(ref_rri, est_rri):
     corr = np.corrcoef(est_rri, ref_rri)[0, 1]
@@ -134,9 +202,7 @@ def CalcEvalRRI(ref_rri, est_rri):
     result = {"corr":corr,"mae":mae,"rmse":rmse}
     return result
 
-
-
-def Calc_PSD(rri_peaks=None, rri=None, nfft=2**8,keyword=""):
+def CalcPSD(rri_peaks=None, rri=None, nfft=2**8,keyword=""):
     """
     PSDを出力
     rri_peaks [ms]
@@ -162,9 +228,7 @@ def Calc_PSD(rri_peaks=None, rri=None, nfft=2**8,keyword=""):
             f'{keyword}HF_abs':HF,
             f'{keyword}LFHFratio':LF/HF}
 
-
-
-def Calc_MissPeaks(est_rpeaks=None, 
+def CalcMissPeaks(est_rpeaks=None, 
                    ref_rpeaks=None,
                    threshold=0.25):
     """
@@ -201,14 +265,14 @@ def Calc_MissPeaks(est_rpeaks=None,
     ref_rri = ref_rpeaks[1:]-ref_rpeaks[:-1]
     ref_rpeaks = ref_rpeaks[1:]
     input_peaknum = ref_rri.size
-    print("Input  REF RRI:{}, EST RRI:{}".format(ref_rri.size, est_rri.size))
+    # print("Input  REF RRI:{}, EST RRI:{}".format(ref_rri.size, est_rri.size))
 
     if est_rpeaks.size != ref_rpeaks.size:
         # Estimate peaks内で閾値より大きく外れたデータを削除
         median_rri = signal.medfilt(est_rri, 5)# median filter
         detrend_est_rri = est_rri - median_rri
         index_outlier = np.where(np.abs(detrend_est_rri) > (threshold*1000))[0]
-        print("{} point detected".format(index_outlier.size))
+        # print("{} point detected".format(index_outlier.size))
         if index_outlier.size > 0:
             flag = np.ones(len(est_rri), dtype=bool)
             flag[index_outlier.tolist()] = False
@@ -235,10 +299,10 @@ def Calc_MissPeaks(est_rpeaks=None,
             error_flag = True
 
             
-    print("Output REF RRI:{}, EST RRI:{}".format(ref_rri.size, est_rri.size))
+    # print("Output REF RRI:{}, EST RRI:{}".format(ref_rri.size, est_rri.size))
     
     error_rate = (input_peaknum-ref_rri.size)/input_peaknum
-    print("Error Rate: {}%".format(100*error_rate))
+    # print("Error Rate: {}%".format(100*error_rate))
     return ref_rri,est_rri,error_rate,error_flag
 
 if __name__ == "__main__":

@@ -13,7 +13,5 @@ partition rPPG_Detection(POS) {
 --> "slide 1 frame ...loop"
 }
 --> "rPPG signals"
-' --> "Band pass filter 0.7Hz(42bpm)~2.5Hz(150bpm)"
-' --> "Filtered rPPG signals"
 --> (*)
 @enduml

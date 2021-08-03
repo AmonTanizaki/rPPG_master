@@ -1,0 +1,69 @@
+@startuml
+package "roi_detection" #DDDDDD {
+  class landmark_extraction {
+    +FaceAreaRoI()
+    +MouseRoI()
+    +ExportRGBComponents()
+  }
+  class skintone_detector {
+    +SkinDetect()
+    +SkinDetectTrack()
+  }
+   skintone_detector<|-- landmark_extraction
+}
+
+package "pulse_detection" #DDDDDD {
+  class cdf_filter {
+    +cdf_filter()
+  }
+  class GreenMethod {
+    +GreenMethod()
+  }
+  class POSMethod {
+    +POSMethod()
+  }
+  class ChromMethod {
+    +ChromMethod()
+  }
+  class SoftsigMethod {
+    +SoftsigMethod()
+  }
+  cdf_filter <|-- POSMethod
+}
+
+package "calc_hrv" #DDDDDD {
+  class preprocessing {
+    +ButterFilter()
+    +MovingAverage()
+    +rgb_resample()
+  }
+  class peak_detector {
+    +RPPGPeakDetection()
+    +OutlierDetect()
+  }
+  cdf_filter <|-- POSMethod
+}
+package "tools" #DDDDDD {
+  class evaluate {
+    +CalcFreqTimeHRV()
+    +CalcSNR()
+    +CalcTimeSNR()
+    +CalcEvalRRI()
+    +CalcPSD()
+    +CalcMissPeaks()
+  }
+  class visualize {
+    +plot_SNR()
+    +plot_HRVpsd()
+    +plot_PPGspec()
+    +plot_HRVspec()
+    +plot_BlandAltman()
+  }
+  class openface {
+    +openface()
+  }
+  class skintrackbar {
+    +trackbar()
+  }
+}
+@enduml

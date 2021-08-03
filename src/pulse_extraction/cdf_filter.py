@@ -8,7 +8,6 @@ import math
 from scipy.fftpack import fft, ifft, fftfreq
 import matplotlib.pyplot as plt
 
-
 def cdf_filter(C_rgb, LPF, HPF, fs, bpf=False):
     """
     Color-distortion filtering for remote photoplethysmography. 
@@ -16,9 +15,6 @@ def cdf_filter(C_rgb, LPF, HPF, fs, bpf=False):
     L = C_rgb.shape[0]
     # temporal normalization
     Cn = C_rgb/np.average(C_rgb, axis=0) -1 
-    # Hanning Window
-    # window = np.hanning(L).reshape(-1,1)
-    # Cn = Cn * window
     #  FFT transform
     FF = fft(Cn, n=L, axis=0)
     freq = fftfreq(n=L, d=1/fs)

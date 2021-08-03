@@ -6,11 +6,7 @@ from ..roi_detection.landmark_extractor import *
 def nothing(x):
     pass
 
-def trackbar(df,path,filename):
-    # Import landmark 
-    pix_x_frames = df.loc[:, df.columns.str.contains('x_')].values.astype(np.int)
-    pix_y_frames = df.loc[:, df.columns.str.contains('y_')].values.astype(np.int)
-
+def trackbar(path,filename):
     cap = cv2.VideoCapture(path)
     cv2.namedWindow('marking')
     cv2.createTrackbar('Y Lower','marking',0,255,nothing)
@@ -21,14 +17,8 @@ def trackbar(df,path,filename):
     cv2.createTrackbar('Cr Higher','marking',133,255,nothing)
     i = 0
     while True:
-        pix_x = pix_x_frames[i,:].reshape(-1, 1)
-        pix_y = pix_y_frames[i,:].reshape(-1, 1)
-        _,frame = cap.read()
-
-        # FaceMask by features point
-        mask = RoIDetection(frame,pix_x,pix_y)
-        img = cv2.bitwise_and(frame, frame, mask=mask)
-
+        _,img = cap.read()
+        
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2YCrCb)
         hL = cv2.getTrackbarPos('Y Lower','marking')
         hH = cv2.getTrackbarPos('Y Higher','marking')

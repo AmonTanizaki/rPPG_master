@@ -5,11 +5,11 @@ SoftSig
 # coding: utf-8
 import numpy as np
 import math
-from .. import preprocessing
+from ..calc_hrv import preprocessing
 import matplotlib.pyplot as plt
 from scipy import fftpack
 
-def SoftsigMethod(rgb_components, WinSec=3.2, LPF=0.6, HPF=3.0, fs=None, filter=True):
+def SoftsigMethod(rgb_components, WinSec=25.6, LPF=0.6, HPF=3.0, fs=None, filter=True):
     """
     Softsig method
     WinSec :was a 32 frame window with 20 fps camera
@@ -43,7 +43,7 @@ def SoftsigMethod(rgb_components, WinSec=3.2, LPF=0.6, HPF=3.0, fs=None, filter=
     return H
 
 # Simpler Proposed Method (no physiological conditions)
-def softsig_selection(Cn,fs,step=10):
+def softsig_selection(Cn,fs,step=2):
     # R,G,B ... evenly spaced time intervals
     # 格子点の作成
     theta_range = np.linspace(0, np.pi/2, step) # θ_1は[0,π/2]の値をとる

@@ -4,16 +4,35 @@ peak to peak detector
 # coding: utf-8
 import numpy as np
 from scipy import interpolate,signal
-from .. import preprocessing
+from . import preprocessing
 from ..tools import evaluate
 import matplotlib.pyplot as plt
 
-
-def RppgPeakDetection(ppg,fs,fr=100, show=False, filter=False, range=1.0):
+def RppgPeakDetection(ppg,fs,fr=100, show=False, filter=False, range=.7):
     """
     rPPG peak検出
-    peak時間を返り値とする
+
+    Parameters
+    -------
+    ppg: array
+        脈波信号
+    fs: int 
+        サンプリングレート
+    fr: int 
+        補間後のサンプリングレート
+    show: bool,optional 
+        ピーク検出の結果をグラフで表示
+    filter: bool,optional
+        ノイズ除去
+    range: float,optional
+        ピーク検出のパラメータ
+    
+    Returns
+    -------
+    rpeaks: array
+        [ms] PPGのピーク時間
     """
+    
     hr_f = evaluate.CalcSNR(ppg,fs=fs,nfft=1024)["HR"]
 
     if filter==True:
@@ -23,10 +42,10 @@ def RppgPeakDetection(ppg,fs,fr=100, show=False, filter=False, range=1.0):
     # Resampling
     t_interpol, resamp_ppg = resampling(ppg, fs, fr)
     
+    # Peak Detection 
     order=int((1/hr_f) * range * fr) # RRI[s] * range[%] * rate[hz] = サンプル数
     peak_indexes = signal.argrelmax(resamp_ppg,order=order)
     rpeaks = t_interpol[peak_indexes]
-
 
     if show:
         fig,axes = plt.subplots(2, 1, sharex=True)
@@ -38,19 +57,6 @@ def RppgPeakDetection(ppg,fs,fr=100, show=False, filter=False, range=1.0):
         axes[1].plot(rpeaks[1:],rpeaks[1:]-rpeaks[:-1])
         plt.show()
     return rpeaks*1000 # [ms]
-
-def RppgPeakCorrection(RRIpeaks, col=0.80):
-    """
-    RPPGの外れ値除去
-    """
-    i = 2
-    while RRIpeaks.shape[0] > i: 
-        rri = RRIpeaks[i] - RRIpeaks[i-1]
-        pre_rri = RRIpeaks[i-1] - RRIpeaks[i-2]
-        if rri/pre_rri <= col:
-            RRIpeaks = np.delete(RRIpeaks, i)
-        i = i + 1
-    return RRIpeaks
 
 def OutlierDetect(rpeaks=None, threshold=0.25):
     """RRI時系列と平均値の差分を算出し，閾値を使って外れ値を取り除く
@@ -73,7 +79,7 @@ def OutlierDetect(rpeaks=None, threshold=0.25):
     """
     # RRIを取得
     rri = rpeaks[1:]-rpeaks[:-1]
-    rpeaks = rpeaks[1:]
+    rpeaks = rpeaks[1:]-rpeaks[0]
 
     # median filter
     median_rri = signal.medfilt(rri, 5)
@@ -81,9 +87,9 @@ def OutlierDetect(rpeaks=None, threshold=0.25):
 
     # 閾値より大きく外れたデータを取得
     index_outlier = np.where(np.abs(detrend_rri) > (threshold*1000))[0]
-    print("{} point detected".format(index_outlier.size))
-    plt.plot()
+
     if index_outlier.size > 0:
+        print("Outlier {} points detected".format(index_outlier.size))
         # 閾値を超えれば，スプライン関数で補間
         flag = np.ones(len(rri), dtype=bool)
         flag[index_outlier.tolist()] = False
@@ -96,7 +102,6 @@ def OutlierDetect(rpeaks=None, threshold=0.25):
 
     return rpeaks, rri
 
-
 def resampling(rppg, fs, fr):
     """
     リサンプリング
@@ -107,31 +112,3 @@ def resampling(rppg, fs, fr):
     t_interpol = np.arange(ts[0], ts[-1], 1./fr)
     resamp_rppg = rppg_interpol(t_interpol)
     return t_interpol, resamp_rppg
-
-def linear_resampling(rppg, ts, fr=100):
-    """
-    リサンプリング
-    3次のスプライン補間
-    """
-    #ts = np.arange(0, len(rppg)/fs, 1./fs)[:int(len(rppg))]
-    rppg_interpol = interpolate.interp1d(ts, rppg, "linear")
-    t_interpol = np.arange(ts[0], ts[-1], 1./fr)
-    resamp_rppg = rppg_interpol(t_interpol)
-    return t_interpol, resamp_rppg
-
-if __name__ == "__main__":
-    import matplotlib.pyplot as plt
-    data = np.loadtxt("./result/rppg_2020-04-30_motion_talking.csv",delimiter=",")
-    # smooth
-    sm_size = int(0.75 * sampling_rate)
-    filtered, _ = st.smoother(signal=aux,
-                              kernel='boxzen',
-                              size=sm_size,
-                              mirror=True)
-    psi_dot_np = np.gradient(data, 1/30)
-    psi_2dot_np = np.gradient(psi_dot_np, 1/30)
-    fig, axes = plt.subplots(3, 1, sharex=True)
-    axes[0].plot(data)
-    axes[1].plot(psi_dot_np**2)
-    axes[2].plot(psi_2dot_np**2)
-    plt.show()

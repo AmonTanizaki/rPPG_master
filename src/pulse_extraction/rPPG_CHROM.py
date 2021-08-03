@@ -9,7 +9,7 @@ original:https://github.com/danmcduff/iphys-toolbox/blob/master/CHROM_DEHAAN.m
 # coding: utf-8
 import numpy as np
 import math
-from .. import preprocessing
+from ..calc_hrv import preprocessing
 def ChromMethod(rgb_components, WinSec=1.60, LPF=0.7, HPF=2.5, fs=15):
     """
     CHROM method

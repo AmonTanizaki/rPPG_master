@@ -7,11 +7,11 @@ POS_WANG The Plane Orthogonal to Skin-Tone (POS) Method from:
 # coding: utf-8
 import numpy as np
 import math
-from .. import preprocessing
+from ..calc_hrv import preprocessing
 from . import cdf_filter
 import matplotlib.pyplot as plt
 
-def POSMethod(rgb_components, WinSec=1.6, LPF=0.7, HPF=2.5, fs=30, filter = False):
+def POSMethod(rgb_components,fs,filter = True, WinSec=1.6, LPF=0.7, HPF=2.5):
     """
     POS method
     WinSec :was a 32 frame window with 20 fps camera
@@ -25,7 +25,6 @@ def POSMethod(rgb_components, WinSec=1.6, LPF=0.7, HPF=2.5, fs=30, filter = Fals
     N = rgb_components.shape[0]
     H = np.zeros(N)
     l = math.ceil(WinSec*fs)
-
 
     # loop from first to last frame
     for t in range(N-l+1):
